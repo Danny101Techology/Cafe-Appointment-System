@@ -1,21 +1,27 @@
 <script setup>
 import axios from 'axios';
-import { ref, onMounted, reactive } from 'vue';
+import { ref, onMounted, reactive, watch } from 'vue';
 import { Form, Field, useResetForm, useSetFieldError } from 'vee-validate';
 import * as yup from 'yup';
 import UserListItem from './UserListItem.vue';
 import { useToastr } from '../../toastr.js';
+import { debounce } from 'lodash';
+import { Bootstrap4Pagination } from 'laravel-vue-pagination';
 
-const users = ref([]);
+const users = ref({ 'data': [] });
 const editing = ref(false);
 const formValues = ref();
 const form = ref(null);
+const searchQuery = ref(null);
+const toastr = useToastr();
 
 
-const getUsers = () => {
-    axios.get("/api/users")
+const getUsers = (page = 1) => {
+    axios.get(`/api/users?page=${page}`)
         .then((response) => {
             users.value = response.data;
+            selectedUsers.value = [];
+            selectAll.value = false;
         });
 };
 
@@ -38,8 +44,8 @@ const editUserSchema = yup.object({
 const createUser = (values, { resetForm, setErrors }) => {
     axios.post('/api/users', values)
         .then((response) => {
-            users.value.unshift(response.data); // in the first line in the table
-            //user.value.unshift(response.data); in the last line in the table
+            users.value.data.unshift(response.data); // in the first line in the table
+            //user.value.shift(response.data); in the last line in the table
 
             $('#UserFormModal').modal('hide');
             resetForm();
@@ -113,6 +119,59 @@ const userDeleted = (userId) => {
     users.value = users.value.filter(user => user.id !== userId)
 };
 
+
+const search = () => {
+    axios.get('/api/users/search', {
+        params: {
+            query: searchQuery.value
+        }
+    })
+        .then(response => {
+            users.value = response.data;
+        })
+        .catch(error => {
+            console.log(error);
+        })
+}
+
+const selectedUsers = ref([]);
+const toggleSelection = (user) => {
+    const index = selectedUsers.value.indexOf(user.id);
+    if (index === -1) {
+        selectedUsers.value.push(user.id);
+    } else {
+        selectedUsers.value.splice(index, 1);
+    }
+    console.log(selectedUsers.value);
+};
+
+const bulkDelete = () => {
+    axios.delete('/api/users', {
+        data: {
+            ids: selectedUsers.value
+        }
+    })
+        .then(response => {
+            users.value.data = users.value.data.filter(user => !selectedUsers.value.includes(user.id));
+            selectedUsers.value = [];
+            selectAll.value = false;
+            toastr.success('Users deleted successfully!');
+        });
+}
+const selectAll = ref(false);
+const selectAllUsers = () => {
+    if (selectAll.value) {
+        selectedUsers.value = users.value.data.map(user => user.id);
+    } else {
+        selectedUsers.value = [];
+    }
+    console.log(selectedUsers.value);
+}
+
+watch(searchQuery, debounce(() => {
+    search();
+}, 300));
+
 onMounted(() => {
     getUsers();
 });
@@ -136,14 +195,34 @@ onMounted(() => {
 
     <div class="content">
         <div class="container-fluid">
-            <button @click="addUser" type="button" class="btn btn-primary mb-2">
-                Add New User
-            </button>
+            <div class="d-flex justify-content-between">
+                <div class="d-flex">
+                    <button @click="addUser" type="button" class="btn btn-primary mb-2">
+                        <i class="fa fa-plus-circle mr-1"></i>
+                        Add New User
+                    </button>
+                    <div v-if="selectedUsers.length > 0">
+                        <button @click="bulkDelete" type="button" class="btn btn-danger mb-2 ml-2">
+                            <i class="fa fa-trash mr-1"></i>
+                            Delete Selected
+                        </button>
+                        <span class="ml-2">Selected {{ selectedUsers.length }} users</span>
+                    </div>
+
+                </div>
+
+                <div>
+                    <input type="text" v-model="searchQuery" class="form-control" placeholder="Search..." />
+                </div>
+            </div>
+
             <div class="card">
                 <div class="card-body">
                     <table class="table table-bordered">
                         <thead>
                             <tr>
+                                <th class="text-center" style="width: 50px"><input type="checkbox" v-model="selectAll"
+                                        @change="selectAllUsers" /></th>
                                 <th style="width: 10px">#</th>
                                 <th>Name</th>
                                 <th>Email</th>
@@ -152,7 +231,7 @@ onMounted(() => {
                                 <th>Options</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody v-if="users.data.length > 0">
                             <!-- <tr v-for="(user, index) in users" :key="user.id">
                                 <td>{{ index + 1 }}</td>
                                 <td>{{ user.name }}</td>
@@ -165,10 +244,20 @@ onMounted(() => {
                                             class="fa fa-trash text-danger ml-2"></i></a>
                                 </td>
                             </tr> -->
-                            <UserListItem v-for="(user, index) in users" :key="user.id" :user=user :index=index
-                                @user-deleted="userDeleted" @edit-user="editUser" />
+                            <UserListItem v-for="(user, index) in users.data" :key="user.id" :user=user :index=index
+                                @user-deleted="userDeleted" @edit-user="editUser" @toggle-selection="toggleSelection"
+                                :select-all="selectAll" />
+                        </tbody>
+                        <tbody v-else>
+                            <tr>
+                                <td colspan="6" class="text-center"> No results found
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
+                    <div class="mt-3" style="margin-left: 50%;margin-right: 50%;">
+                        <Bootstrap4Pagination :data="users" @pagination-change-page="getUsers" />
+                    </div>
                 </div>
             </div>
         </div>
