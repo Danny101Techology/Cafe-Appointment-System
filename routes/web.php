@@ -27,7 +27,14 @@ Route::get('/', function () {
 
 Route::get('/api/users', [UserController::class, 'index']);
 Route::post('/api/users', [UserController::class, 'store']);
+Route::get('/api/users/search', [UserController::class, 'search']);
+Route::patch('/api/users/{user}/change-role', [UserController::class, 'changeRole']);
 Route::put('/api/users/{user}', [UserController::class, 'update']);
 Route::delete('/api/users/{user}', [UserController::class, 'destroy']);
+Route::delete('/api/users', [UserController::class, 'bulkDelete']);
 
-Route::get('{view}', ApplicationController::class)->where('view','(.*)');
+Route::get('admin/{view}', ApplicationController::class)->where('view','(.*)');
+
+Auth::routes();
+
+Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home');
